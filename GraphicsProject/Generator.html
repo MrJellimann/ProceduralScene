@@ -1,0 +1,543 @@
+<!doctype html>
+<html>
+<head>
+	<meta charset="utf-8">
+	<title>-- Procedural Scene --</title>
+	<!-- Shaders are here, but they're not used for this one -->
+	<script id="vShader" type="x-shader/x-vertex">
+		// Vertex Shader
+		precision highp float;
+
+		uniform mat4 modelViewMatrix;
+		uniform mat4 projectionMatrix;
+		uniform mat3 normalMatrix;
+
+		// Input to shader
+		attribute vec3 normal;
+		attribute vec3 position;
+		uniform vec3 lightPos; // New
+		uniform float intensity;
+		attribute vec2 uv;
+
+		// Output from shader
+		varying vec2 vUV; // the coordinate on the texture!
+		varying vec3 vNormal; // New
+		varying float brightness; // New
+
+		void main()
+		{
+			// Transform and re-normalize our normal vector from the vertex
+			vNormal = normalize(normalMatrix * normal); // Get transformed normal
+			// Determine our vector pointing to the light by subtracting the vertex
+			// position from the light position to get a vector pointing that way
+			vec3 towardsLight = normalize(lightPos - position);
+			// Handy dandy built-in function to get distance between two points
+			float dist = distance(position, lightPos);
+
+			// We should get the result of the cosine of the angle of incidence with
+			// just the dot product between the vector towards the light and the normal
+			// vector of the vertex. We limit to minimum value of 0 because we don't
+			// care about negative values (they're in the dark anyways)
+
+			float dotProd = dot(vNormal, towardsLight);
+			// brightness = intensity / (dist*dist) * max(0.0, dotProd);
+			// brightness = 1.0;
+			brightness = dotProd;
+
+			// Other stuff we need for the shader
+			//gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+			gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+				// gl_Position: predefined required output
+			vUV = uv;
+		}
+	</script>
+	<script id="fShader" type="x-shader/x-fragment">
+		// Fragment Shader
+		precision highp float;
+
+		uniform sampler2D map;
+		uniform vec3 lightCol; // New
+
+		varying float brightness;
+		varying vec2 vUV; // range [0, 1]
+		void main()
+		{
+			
+			// gl_FragColor = texture2D(map, vUV); // vec4 color
+			// Then we pass the incident irradiance as the alpha of our color vector,
+			// and the normal colors of the light as the rgb components of the vector
+			vec4 baseCol = texture2D(map, vUV); // Is vUV the same as fragTexCoord? yes
+			// gl_FragColor = vec4(lightCol * baseCol.rgb * brightness, baseCol.a);
+			gl_FragColor = vec4(baseCol.rgb * brightness, baseCol.a);
+			// gl_FragColor = baseCol;
+		}
+	</script>
+	<script src="/resources/scripts/three.js"></script>
+	<script src="/resources/scripts/three.min.js"></script>
+	<script src="/resources/scripts/Clock.js" type="module"></script>
+	<script src="/resources/scripts/FirstPersonControls.js"></script>
+	<script src="/resources/scripts/OBJLoader.js"></script>
+	<!-- <script src="/resources/scripts/dat.gui.min.js"></script> -->
+</head>
+
+<body>
+	<h1 align="center">Procedural Scene - Christopher Walen</h1>
+	<script type="text/javascript">
+		"use strict";
+
+		// Globals
+		let scene, camera, renderer;
+		let cameraControls;
+		let biome;
+
+		// Set up some defaults in case things happen out-of-order
+		let objectChance = 0.12;
+		let clearingSize = 0.5;
+		let backgroundCol = new THREE.Color(0.1, 0.1, 0.1);
+		let sunColor = new THREE.Color(0, 0.5, 0.9);
+		let ambientIntensity = 0.5;
+
+		let manager = new THREE.LoadingManager();
+		let objLoader = new THREE.OBJLoader(manager);
+		objLoader.setPath("./");
+		let texLoader = new THREE.TextureLoader(manager);
+		texLoader.setPath("./");
+		let modelDir = "/resources/models";
+		let texDir = "/resources/textures";
+
+		let WIDTH = window.innerWidth;
+		let HEIGHT = window.innerHeight;
+		let clock = new THREE.Clock();
+
+		init();
+		render();
+
+		function init()
+		{
+			console.log("initializing...");
+			scene = new THREE.Scene();
+			initRenderer();
+			initScene();
+			// createGUI(); // LEAVE THIS COMMENTED OUT
+		}
+
+		function render()
+		{
+			// FPS camera
+			var delta = clock.getDelta();
+			cameraControls.update(delta);
+
+			// Renderer
+			renderer.clear();
+			requestAnimationFrame(render);
+			renderer.render(scene, camera);
+			handleWindowResize();
+		}
+
+		function initRenderer()
+		{
+			console.log("creating renderer...");
+			renderer = new THREE.WebGLRenderer({
+				antialias : true,
+				alpha : true,
+				depth : true
+			});
+			renderer.setSize(WIDTH, HEIGHT);
+			renderer.setClearColor(backgroundCol, 1);
+			renderer.setPixelRatio(window.devicePixelRatio);
+			// Using Threejs's native shadow maps
+			renderer.shadowMap.enabled = true;
+			renderer.shadowMap.type = THREE.BasicShadowMap;
+			// renderer.shadowMap.mapSize = new THREE.Vector2(512, 512); // This doesn't work
+			document.body.appendChild(renderer.domElement);
+			console.log("...done");
+		}
+
+		function pickSunColor()
+		{
+			var choice = Math.ceil(Math.random() * 6);
+			switch (choice)
+			{
+				default:
+				case 1:
+				sunColor = new THREE.Color(0, 0.5, 0.9);
+				ambientIntensity = 0.1;
+				console.log("blue sun"); break;
+				case 2:
+				sunColor = new THREE.Color(0.8, 0.2, 0.76);
+				ambientIntensity = 0.4;
+				console.log("light purple sun"); break;
+				case 3:
+				sunColor = new THREE.Color(0.9, 0.5, 0);
+				ambientIntensity = 0.3;
+				console.log("reddish green sun"); break;
+				case 4:
+				sunColor = new THREE.Color(0.98, 0.88, 0.15);
+				ambientIntensity = 0.6;
+				console.log("yellow sun"); break;
+				case 5:
+				sunColor = new THREE.Color(0.4, 0.05, 0.7);
+				ambientIntensity = 0.1;
+				console.log("nice purple sun"); break;
+				case 6:
+				sunColor = new THREE.Color(0.1, 0.75, 0.39);
+				ambientIntensity = 0.25;
+				console.log("nuclear green sun"); break;
+			}
+		}
+
+		// Set up planes i.e. the floor for respective biome
+		function addForestFloor()
+		{
+			let texture = texLoader.load(texDir+"/forest/Dirt1.png");
+
+			objLoader.load(modelDir+"/forest/Forest2.obj",
+					function(obj)
+					{
+						for (var i in obj.children)
+						{
+							obj.children[i].material = new THREE.MeshLambertMaterial({map: texture, needsUpdate: true});
+							obj.children[i].receiveShadow = true;
+						}
+
+						render();
+						scene.add(obj);
+						return obj;
+					});
+		}
+
+		function addCaveFloor()
+		{
+			let texture = texLoader.load(texDir+"/cave/Stone1.png");
+
+			objLoader.load(modelDir+"/cave/CaveLand.obj",
+					function(obj)
+					{
+						for (var i in obj.children)
+						{
+							obj.children[i].material = new THREE.MeshLambertMaterial({map: texture, needsUpdate: true});
+							obj.children[i].receiveShadow = true;
+						}
+
+						render();
+						scene.add(obj);
+						return obj;
+					});
+		}
+
+		function addIslandFloor()
+		{
+			let texture = texLoader.load(texDir+"/island/Sand1.png");
+
+			objLoader.load(modelDir+"/island/IslandLand1.obj",
+					function(obj)
+					{
+						for (var i in obj.children)
+						{
+							obj.children[i].material = new THREE.MeshLambertMaterial({map: texture, needsUpdate: true});
+							obj.children[i].receiveShadow = true;
+						}
+
+						render();
+						scene.add(obj);
+						return obj;
+					});
+		}
+
+		// Functions that pick a random model and its associated texture
+		// for the given biome and loads it in and adds it to the scene
+		function addForestObj(xpos, ypos)
+		{
+			let texture;
+			var choice = Math.ceil(Math.random()*6) - Math.round(Math.random() * 2);
+			var modelName;
+			switch (choice)
+			{
+				default:
+				case 1: modelName = "Tree1"; break;
+				case 2: modelName = "Tree2"; break;
+				case 3: modelName = "Tree3"; break;
+				case 4: modelName = "Rock1"; break;
+				case 5: modelName = "Rock2"; break;
+				case 6: modelName = "Rock3"; break;
+			}
+
+			texture = texLoader.load(texDir+"/forest/"+modelName+".png");
+			objLoader.load(modelDir+"/forest/"+modelName+".obj",
+					function(obj)
+					{
+						for (var i in obj.children)
+						{
+							obj.children[i].material = new THREE.MeshLambertMaterial({map: texture, needsUpdate: true});
+							obj.children[i].castShadow = true;
+							obj.children[i].receiveShadow = true;
+						}
+
+						var scale = 0.2 + (Math.random() * 0.4);
+						obj.scale.set(scale, scale, scale);
+						obj.rotation.y = Math.random() * 359;
+						obj.rotation.x = 0.05 - Math.random() * 0.1;
+						obj.rotation.z = 0.05 - Math.random() * 0.1;
+						obj.position.set(xpos + (Math.random() * .05 - Math.random()*.1), 0.5 + (Math.random() * 0.2), ypos + (Math.random() * .05 - Math.random()*.1));
+						scene.add(obj);
+						console.log("Added "+modelName+"!");
+					});
+		}
+
+		function addCaveObj(xpos, ypos)
+		{
+			let texture;
+			var choice = Math.ceil(Math.random()*7) - Math.round(Math.random() * 2);
+			var modelName;
+			switch (choice)
+			{
+				default:
+				case 1: modelName = "Stalagmite1"; break;
+				case 2: modelName = "Stalagmite2"; break;
+				case 3: modelName = "Stalagmite3"; break;
+				case 4: modelName = "Stalagmite4"; break;
+				case 5: modelName = "Rock1"; break;
+				case 6: modelName = "Rock2"; break;
+				case 7: modelName = "Rock3"; break;
+			}
+
+			texture = texLoader.load(texDir+"/cave/"+modelName+".png");
+			objLoader.load(modelDir+"/cave/"+modelName+".obj",
+					function(obj)
+					{
+						for (var i in obj.children)
+						{
+							obj.children[i].material = new THREE.MeshLambertMaterial({map: texture, needsUpdate: true});
+							obj.children[i].castShadow = true;
+							obj.children[i].receiveShadow = true;
+						}
+
+						var scale = 0.2 + (Math.random() * 0.4);
+						obj.scale.set(scale, scale, scale);
+						obj.rotation.y = Math.random() * 359;
+						obj.rotation.x = 0.05 - Math.random() * 0.1;
+						obj.rotation.z = 0.05 - Math.random() * 0.1;
+						obj.position.set(xpos + (Math.random() * .05 - Math.random()*.1), 0.15 + (Math.random() * 0.2), ypos + (Math.random() * .05 - Math.random()*.1));
+						scene.add(obj);
+						console.log("Added "+modelName+"!");
+					});
+		}
+
+		function addIslandObj(xpos, ypos)
+		{
+			let texture;
+			var choice = Math.ceil(Math.random()*7) - Math.round(Math.random() * 2);
+			// var choice = 1;
+			var modelName;
+			switch (choice)
+			{
+				default:
+				case 1: modelName = "PalmTree1"; break;
+				case 2: modelName = "PalmTree2"; break;
+				case 3: modelName = "Rock1"; break;
+				case 4: modelName = "Rock2"; break;
+				case 5: modelName = "Rock3"; break;
+			}
+
+			texture = texLoader.load(texDir+"/island/"+modelName+".png");
+			objLoader.load(modelDir+"/island/"+modelName+".obj",
+					function(obj)
+					{
+						for (var i in obj.children)
+						{
+							obj.children[i].material = new THREE.MeshLambertMaterial({map: texture, needsUpdate: true});
+							obj.children[i].castShadow = true;
+							obj.children[i].receiveShadow = true;
+						}
+
+						var scale = 0.2 + (Math.random() * 0.4);
+						obj.scale.set(scale, scale, scale);
+						obj.rotation.y = Math.random() * 359;
+						obj.rotation.x = 0.05 - Math.random() * 0.1;
+						obj.rotation.z = 0.05 - Math.random() * 0.1;
+						obj.position.set(xpos + (Math.random() * .5 - Math.random()), 2.65 + (Math.random() * 0.2), ypos + (Math.random() * .5 - Math.random()));
+						scene.add(obj);
+						console.log("Added "+modelName+"!");
+					});
+		}
+
+		// Rest of the scene functions
+		function initScene()
+		{
+			console.log("creating scene...");
+			// Select biome - some settings change due to picked biome
+			biome = Math.ceil(Math.random() * 3);
+			let fogDist = 50;
+
+			if (biome == 2)
+				console.log("Chose cave!");
+			else if (biome == 3)
+			{
+				fogDist = 150;
+				console.log("Chose island!");
+			}
+			else
+				console.log("Chose forest!");
+			
+			console.log("creating fog...");
+			scene.fog = new THREE.Fog(clearingSize, 0.1, fogDist);
+			console.log("...done");
+			initCamera();
+
+			console.log("creating lighting...");
+				initLighting();
+			console.log("...done");
+
+			console.log("adding objects...");
+				// General biome conditions
+				var area = 12;
+				var step = 0.5;
+
+				// Special conditions for Island biome
+				if (biome == 3)
+				{
+					area = 33;
+					step = 1.25;
+				}
+
+				for (var xx = -area - Math.round(Math.random() * 2); xx < area + Math.round(Math.random() * 2); xx+=step)
+				{
+					for (var yy = -area - Math.round(Math.random() * 2); yy < area + Math.round(Math.random() * 2); yy+=step)
+					{
+						// Make sure we have a clearing in the middle
+						if ((xx < clearingSize && yy < clearingSize) || (xx < clearingSize && yy > -clearingSize) || (xx > -clearingSize && yy < clearingSize) || (xx > -clearingSize && yy > -clearingSize))
+							// The actual chance to place an object -> 12% default
+							var ax = Math.abs(xx);
+							var ay = Math.abs(yy);
+							if (Math.random() < objectChance)
+							{
+								// Switch object placement function based on biome
+								switch (biome)
+								{
+									default:
+									case 1: addForestObj(xx, yy); break;
+									case 2: addCaveObj(xx, yy); break;
+									case 3: addIslandObj(xx, yy); break;
+								}
+								// addForestObj(xx, yy);
+								// addCaveObj(xx, yy);
+							}
+					}
+				}
+				switch (biome)
+				{
+					default:
+					case 1: addForestFloor(); break;
+					case 2: addCaveFloor(); break;
+					case 3: addIslandFloor(); break;
+				}
+				
+			console.log("...done");
+
+			console.log("...done");
+		}
+
+		function initCamera()
+		{
+			console.log("creating camera...");
+			camera = new THREE.PerspectiveCamera(90, WIDTH/HEIGHT, 0.1, 1000);
+			
+			camera.position.set(-5, 10, -5);
+
+			camera.lookAt(scene.position);
+			console.log("...done");
+
+			cameraControls = new THREE.FirstPersonControls(camera, renderer.domElement);
+			cameraControls.lookSpeed = 0.7;
+			cameraControls.movementSpeed = 4.0;
+			cameraControls.noFly = true;
+			cameraControls.lookVertical = true;
+			cameraControls.constrainVertical = true;
+			cameraControls.verticalMin = 0.5;
+			cameraControls.verticalMax = 3.0;
+			cameraControls.lon = -150;
+			cameraControls.lat = 120;
+		}
+
+		function initLighting()
+		{
+			pickSunColor();
+
+			// The one true sun
+			let sunLight = new THREE.PointLight(sunColor, 1.0, 500, 0.5);
+			sunLight.position.set(30 - (Math.random() * 15), 50 + (Math.random() * 25), 50 - (Math.random() * 15));
+			sunLight.castShadow = true;
+			scene.add(sunLight);
+
+			// Natural Light
+			let ambientLight = new THREE.AmbientLight(new THREE.Color(0.99, 0.99, 0.99), ambientIntensity);
+			scene.add(ambientLight);
+		}
+
+		// Utility
+		function handleWindowResize()
+		{
+			window.addEventListener("resize",
+									function ()
+									{
+										WIDTH = window.innerWidth;
+										HEIGHT = window.innerHeight;
+										renderer.setSize(WIDTH, HEIGHT);
+										camera.aspect = WIDTH / HEIGHT;
+										camera.updateProjectionMatrix();
+										cameraControls.handleResize();
+										render();
+									})
+		}
+
+		// Lags the program tremendously, settings are generated instead
+		// AS SUCH THIS HAS BEEN ABANDONED
+		// function createGUI()
+		// {
+		// 	let guiObject = {
+		// 		light : {
+		// 			color : "#"+sunColor.getHexString()
+		// 		},
+		// 		objects : {
+		// 			chance : 0.12,
+		// 			maxTilt : 0.05,
+		// 			maxSize : 0.6
+		// 		},
+		// 		shadows : {
+		// 			enable : true
+		// 		},
+		// 		biome : {
+		// 			forest : true,
+		// 			cave : false,
+		// 			island : false
+		// 		}
+		// 	};
+
+		// 	let guiController = new dat.GUI();
+
+		// 	// Light control
+		// 	let lightFolder = guiController.addFolder("Lighting");
+		// 	lightFolder.add(guiObject.light, "color")
+		// 	.name("color")
+		// 	.onChange(
+		// 		function(hex)
+		// 		{
+		// 			sunColor = hex;
+		// 			render();
+		// 		});
+
+		// 	// Object control
+		// 	// let objectFolder = guiController.addFolder("Objects");
+		// 	// objectFolder.add(guiObject.objects, "chance")
+		// 	// .name("chance")
+		// 	// .onChange(
+		// 	// 	function(num)
+		// 	// 	{
+		// 	// 		objectChance = num;
+		// 	// 	}
+		// 	// 	);
+		// }
+	</script>
+
+</body>
+</html>
