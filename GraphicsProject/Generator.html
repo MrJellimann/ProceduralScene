@@ -72,11 +72,11 @@
 			// gl_FragColor = baseCol;
 		}
 	</script>
-	<script src="/resources/scripts/three.js"></script>
-	<script src="/resources/scripts/three.min.js"></script>
-	<script src="/resources/scripts/Clock.js" type="module"></script>
-	<script src="/resources/scripts/FirstPersonControls.js"></script>
-	<script src="/resources/scripts/OBJLoader.js"></script>
+	<script src="resources/scripts/three.js"></script>
+	<script src="resources/scripts/three.min.js"></script>
+	<script src="resources/scripts/Clock.js" type="module"></script>
+	<script src="resources/scripts/FirstPersonControls.js"></script>
+	<script src="resources/scripts/OBJLoader.js"></script>
 	<!-- <script src="/resources/scripts/dat.gui.min.js"></script> -->
 </head>
 
@@ -99,11 +99,12 @@
 
 		let manager = new THREE.LoadingManager();
 		let objLoader = new THREE.OBJLoader(manager);
-		// objLoader.setPath("./");
+		// objLoader.setPath(document.location.pathname);
+		objLoader.setPath("./");
 		let texLoader = new THREE.TextureLoader(manager);
-		// texLoader.setPath("./");
-		let modelDir = "/resources/models";
-		let texDir = "/resources/textures";
+		texLoader.setPath("./");
+		let modelDir = "resources/models";
+		let texDir = "resources/textures";
 
 		let WIDTH = window.innerWidth;
 		let HEIGHT = window.innerHeight;
